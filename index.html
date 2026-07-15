@@ -385,7 +385,11 @@ document.getElementById('btnShare').onclick=async()=>{
   }
 };
 
-/* ================= input: tap + arrows ================= */
+/* ================= input: tap + arrows =================
+   駒のタップ選択は click ではなく pointerup 側(dragIdを使う下のドラッグ処理)で判定する。
+   pointerdown で svg.setPointerCapture() を呼ぶと、その後発火する click イベントの
+   e.target が駒ではなく svg 自身にすり替わる(ブラウザのポインタキャプチャによる
+   ターゲット差し替え)ため、click.target 頼りの駒判定は当てにならない。 */
 svg.addEventListener('click',e=>{
   if(done||suppressClick)return;
   const mv=e.target.closest('.mvbtn');
@@ -394,8 +398,7 @@ svg.addEventListener('click',e=>{
     if(p&&canMove(keyOf(pos),p,mv.dataset.dir)){doMove(p,mv.dataset.dir);render();}
     return;
   }
-  const g=e.target.closest('.piece');
-  if(g){selectedId=(selectedId===+g.dataset.id)?null:+g.dataset.id;render();return;}
+  if(e.target.closest('.piece'))return; // pointerupで処理済み
   selectedId=null;render();
 });
 document.addEventListener('keydown',e=>{
@@ -460,7 +463,13 @@ svg.addEventListener('pointermove',e=>{
 function endDrag(e){
   if(!dragging)return;
   dragging=false;
-  if(dragMovedSteps>0){suppressClick=true;setTimeout(()=>suppressClick=false,80);}
+  if(dragMovedSteps>0){
+    suppressClick=true;setTimeout(()=>suppressClick=false,80);
+  }else if(!done){
+    // 動かなかった = ただのタップ。駒の選択トグルはここで行う(理由は上のコメント参照)
+    selectedId=(selectedId===dragId)?null:dragId;
+    render();
+  }
   dragId=null;
 }
 svg.addEventListener('pointerup',endDrag);
