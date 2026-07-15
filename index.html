@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>箱入り娘 ─ 遊ぶ</title>
+<meta property="og:title" content="箱入り娘 ─ 遊ぶ">
+<meta property="og:description" content="娘の駒を出口までスライドさせよう。">
+<style>
+  :root{
+    --bg:#1b2430; --bg2:#161d27; --panel:#232e3c; --panel2:#2a3746;
+    --line:#39485a; --text:#e8e2d5; --sub:#98a4b3; --faint:#6b7888;
+    --shu:#c2554a; --shu-d:#a03d33;
+    --serif:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+    --sans:"Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{overscroll-behavior:none}
+  body{
+    background:
+      radial-gradient(900px 500px at 70% -10%, #24344a 0%, transparent 60%),
+      var(--bg);
+    color:var(--text); font-family:var(--sans); min-height:100vh;
+    display:flex; flex-direction:column; align-items:center;
+    padding:14px 12px 40px;
+  }
+  header{width:100%;max-width:430px;display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+  h1{font-family:var(--serif);font-weight:600;font-size:20px;letter-spacing:.14em}
+  h1 .accent{color:#e0876f}
+  #puzzleLabel{font-size:12.5px;color:var(--sub);letter-spacing:.05em}
+  .board-frame{
+    width:100%;max-width:430px;
+    background:linear-gradient(160deg,#5d4326,#4a341d);
+    border-radius:14px;padding:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+    position:relative;
+  }
+  svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:none;touch-action:none}
+  .status-line{
+    width:100%;max-width:430px;display:flex;justify-content:space-between;align-items:center;
+    color:var(--sub);font-size:13.5px;min-height:24px;margin-top:10px;gap:8px;
+  }
+  .status-line b{color:var(--text);font-weight:600;font-size:15px}
+  .btns{width:100%;max-width:430px;display:flex;gap:8px;margin-top:8px}
+  button{
+    flex:1;font-family:var(--sans);font-size:14px;color:var(--text);background:var(--panel2);
+    border:1px solid var(--line);border-radius:9px;padding:11px 10px;cursor:pointer;letter-spacing:.04em;
+  }
+  button:hover{background:#33435a}
+  button.primary{background:var(--shu);border-color:var(--shu-d);font-weight:600}
+  button:focus-visible{outline:2px solid #e8b45a;outline-offset:2px}
+  .hint{width:100%;max-width:430px;margin-top:12px;font-size:12px;color:var(--faint);line-height:1.8;text-align:center}
+  footer{width:100%;max-width:430px;margin-top:18px;font-size:12px;color:var(--faint);text-align:center;line-height:2}
+  footer a{color:#c98c7f;text-decoration:none}
+
+  /* clear overlay */
+  #clearOverlay{
+    position:fixed;inset:0;background:rgba(20,15,10,.72);
+    display:flex;align-items:center;justify-content:center;z-index:10;
+    opacity:0;pointer-events:none;transition:opacity .4s ease;
+  }
+  #clearOverlay.show{opacity:1;pointer-events:auto}
+  .clear-card{
+    background:linear-gradient(160deg,#2b3646,#232e3c);
+    border:1px solid #5a4a30;border-radius:16px;padding:32px 36px;text-align:center;
+    box-shadow:0 16px 48px rgba(0,0,0,.6);max-width:320px;width:86%;
+  }
+  .clear-card .kai{font-family:var(--serif);font-size:30px;letter-spacing:.34em;color:#e8b45a;margin-bottom:14px}
+  .clear-card .score{font-size:15px;color:var(--text);margin-bottom:22px;line-height:1.9}
+  .clear-card .score b{color:#e8b45a;font-size:22px}
+  .clear-card .row{display:flex;gap:8px}
+  @media (prefers-reduced-motion: reduce){ .piece{transition:none !important} }
+</style>
+</head>
+<body>
+<header>
+  <h1>箱入り娘 <span class="accent">─ 遊ぶ</span></h1>
+  <span id="puzzleLabel"></span>
+</header>
+
+<div class="board-frame"><svg id="board" viewBox="0 0 440 560" role="img" aria-label="箱入り娘の盤面"></svg></div>
+
+<div class="status-line">
+  <span>手数 <b id="mvCount">0</b></span>
+  <span id="msg">駒をドラッグ、またはタップ→矢印</span>
+</div>
+<div class="btns">
+  <button id="btnUndo">1手戻す</button>
+  <button id="btnReset">はじめから</button>
+</div>
+
+<div class="hint" id="hintLine"></div>
+
+<footer id="siteFooter"></footer>
+
+<div id="clearOverlay">
+  <div class="clear-card">
+    <div class="kai">開　放</div>
+    <div class="score" id="clearScore"></div>
+    <div class="row">
+      <button id="btnAgain">もう一度</button>
+      <button id="btnShare" class="primary">結果をシェア</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ===== サイト設定(公開前にここだけ編集) ===== */
+const SITE={
+  author:'',        // 例: '@your_x_handle' 空なら非表示
+  authorUrl:'',     // 例: 'https://x.com/your_x_handle'
+  noteUrl:'',       // 解答販売ページ 空なら非表示
+  shareTag:'#箱入り娘',
+};
+
+/* ===== テーマ定義 =====
+   新しいテーマは THEMES にエントリを1つ追記するだけ。URLの ?t=キー名 で切り替わる(例: ?t=tanabata)。
+   ※ hakoiri-studio.html にも同じ THEMES があるので、追加・変更時は必ず両方に同じ内容をコピーすること。
+   - label: 盤面ラベルやシェア文に付くテーマ名(空文字なら非表示)
+   - hero: 2×2の主役駒の名前。4文字以上は自動で2行に折り返し、フォントも自動縮小される
+   - V / H: 縦駒(1×2)・横駒(2×1)の名前。枚数分だけ先頭から使われ、足りなければ循環する
+   - small: 1×1駒の名前(後ろに 一・二・三…が自動で付く) / smallChar: 盤上に大きく表示する1文字
+   - colors: [a,b] はグラデーション(上→下)。frame=外枠 boardIn=盤の内側 hero*=主役駒 piece*=他の駒 exit=出口 */
+const THEMES={
+  default:{
+    label:'', hero:'娘',
+    V:['父親','母親','祖父','祖母','兄','姉','叔父','叔母'],
+    H:['番頭','手代','丁稚','女中'],
+    small:'小僧', smallChar:'小',
+    colors:{
+      frame:['#5d4326','#4a341d'], boardIn:['#2b2117','#231a12'], boardStroke:'#1a130c', dot:'#4a3a28',
+      hero:['#c95c4f','#9c352c'], heroStroke:'#7c261f', heroText:'#f6e8d8',
+      piece:['#e0bc8b','#bd8d55'], pieceStroke:'#8a5f33', pieceText:'#54371a', pieceSub:'#7a5630',
+      exit:'#c2554a', exitText:'#c98c7f',
+    },
+  },
+  tanabata:{
+    label:'七夕', hero:'織姫',
+    V:['彦星','天帝','星影','夜風','笹竹','短冊','星屑','月光'],
+    H:['天の川','かささぎ','雲間','橋渡'],
+    small:'星', smallChar:'星',
+    colors:{
+      frame:['#2f3d73','#1f2950'], boardIn:['#141b33','#0e1426'], boardStroke:'#090e1d', dot:'#3d4c80',
+      hero:['#f2ca62','#c9932f'], heroStroke:'#8f6316', heroText:'#463008',
+      piece:['#5f6fa6','#424f81'], pieceStroke:'#2d3961', pieceText:'#e9edff', pieceSub:'#aab8e8',
+      exit:'#e8b45a', exitText:'#e6c78c',
+    },
+  },
+  christmas:{
+    label:'聖夜', hero:'サンタクロース',
+    V:['トナカイ','ツリー','煙突','聖歌隊','靴下','鐘','蝋燭','柊'],
+    H:['プレゼント','ソリ','リース','暖炉'],
+    small:'雪', smallChar:'雪',
+    colors:{
+      frame:['#2d5237','#1e3826'], boardIn:['#152417','#101b12'], boardStroke:'#0b130c', dot:'#3c5c44',
+      hero:['#d9534a','#a32b22'], heroStroke:'#7a1d16', heroText:'#fdf3e3',
+      piece:['#f0e6d2','#d3c5a8'], pieceStroke:'#a09274', pieceText:'#33512e', pieceSub:'#8a7c5e',
+      exit:'#d9534a', exitText:'#e0a49e',
+    },
+  },
+};
+
+/* ================= core model ================= */
+const W=4, H=5, CELLS=20;
+const SIZE={D:[2,2],V:[1,2],H:[2,1],S:[1,1]};
+const DIRS={up:[-1,0],down:[1,0],left:[0,-1],right:[0,1]};
+const ARROW={up:'↑',down:'↓',left:'←',right:'→'};
+
+function keyOf(ps){
+  const g=Array(CELLS).fill('.');
+  for(const p of ps){const[w,h]=SIZE[p.t];
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++)g[(p.r+y)*W+p.c+x]=p.t;}
+  return g.join('');
+}
+function parseKey(k){
+  const seen=Array(CELLS).fill(false), ps=[];
+  for(let i=0;i<CELLS;i++){
+    if(seen[i]||k[i]==='.')continue;
+    const t=k[i], r=(i/W)|0, c=i%W, [w,h]=SIZE[t];
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++)seen[(r+y)*W+c+x]=true;
+    ps.push({t,r,c});
+  }
+  return ps;
+}
+function validKey(k){
+  if(typeof k!=='string'||k.length!==CELLS||/[^DVHS.]/.test(k))return false;
+  try{ return keyOf(parseKey(k))===k && k.split('D').length-1===4; }catch(e){return false;}
+}
+function isGoal(k){ return k[13]==='D'&&k[14]==='D'&&k[17]==='D'&&k[18]==='D'; }
+function canMove(k,p,d){
+  const[dr,dc]=DIRS[d],[w,h]=SIZE[p.t];
+  const nr=p.r+dr,nc=p.c+dc;
+  if(nr<0||nc<0||nr+h>H||nc+w>W)return false;
+  if(dr===-1){for(let x=0;x<w;x++)if(k[(p.r-1)*W+p.c+x]!=='.')return false;}
+  else if(dr===1){for(let x=0;x<w;x++)if(k[(p.r+h)*W+p.c+x]!=='.')return false;}
+  else if(dc===-1){for(let y=0;y<h;y++)if(k[(p.r+y)*W+p.c-1]!=='.')return false;}
+  else{for(let y=0;y<h;y++)if(k[(p.r+y)*W+p.c+w]!=='.')return false;}
+  return true;
+}
+
+/* ================= naming ================= */
+const SN=['一','二','三','四','五','六','七','八','九','十'];
+function assignNames(ps){
+  let vi=0,hi=0,si=0;
+  return ps.map((p,i)=>{
+    if(p.t==='D')return{...p,id:i,name:THEME.hero};
+    if(p.t==='V')return{...p,id:i,name:THEME.V[vi++%THEME.V.length]};
+    if(p.t==='H')return{...p,id:i,name:THEME.H[hi++%THEME.H.length]};
+    const num=SN[si++%SN.length];
+    return{...p,id:i,name:THEME.small+num,num};
+  });
+}
+function clone(ps){return ps.map(p=>({...p}));}
+const CLASSIC='VDDVVDDVVHHVVSSVS..S';
+
+/* ================= puzzle load ================= */
+const params=new URLSearchParams(location.search);
+let code=(params.get('p')||'').toUpperCase().replace(/[^DVHS.]/g,'');
+let label=params.get('d')||'';
+let num=params.get('n')||'';
+const THEME=THEMES[(params.get('t')||'default').toLowerCase()]||THEMES.default;
+let notice='';
+if(!validKey(code)){ if(code)notice='配置コードが読めなかったため定番配置を表示しています'; code=CLASSIC; if(!label)label='定番'; }
+const puzzle=assignNames(parseKey(code));
+let pos=clone(puzzle);
+let history=[];
+let selectedId=null;
+let steps=0, moves=0, lastMovedId=null, done=false;
+
+const lbl=[THEME.label||null,num?`第${num}問`:null,label||null].filter(Boolean).join(' ・ ');
+document.getElementById('puzzleLabel').textContent=lbl;
+if(notice)document.getElementById('msg').textContent=notice;
+
+/* footer */
+{
+  const f=document.getElementById('siteFooter');
+  let h2='';
+  if(SITE.author)h2+=`出題: ${SITE.authorUrl?`<a href="${SITE.authorUrl}" target="_blank" rel="noopener">${SITE.author}</a>`:SITE.author}<br>`;
+  if(SITE.noteUrl)h2+=`<a href="${SITE.noteUrl}" target="_blank" rel="noopener">解けない…という方へ（解答をnoteで公開中）</a>`;
+  f.innerHTML=h2;
+}
+
+/* ================= rendering ================= */
+const CS=100, PAD=20, GAP=5;
+const svg=document.getElementById('board');
+function cellXY(r,c){return[PAD+c*CS,PAD+r*CS];}
+/* 名前の文字数に応じたレイアウト(テーマで名前が長くなっても収まる) */
+function heroLayout(name,pw,ph){
+  let lines=[name];
+  if(name.length>3){const h2=Math.ceil(name.length/2);lines=[name.slice(0,h2),name.slice(h2)];}
+  const maxLen=Math.max(...lines.map(l=>l.length));
+  const fs=Math.min(72,(pw-20)/maxLen,(ph-24)/(lines.length*1.2));
+  return{lines,fs,lh:fs*1.2};
+}
+function vLayout(name,ph){
+  const n=name.length;
+  const lh=Math.min(46,(ph-24)/n);
+  return{fs:Math.min(36,lh*0.82),lh};
+}
+function hFont(name,pw){return Math.min(36,(pw-24)/name.length);}
+function themeDefs(){
+  const C=THEME.colors;
+  return `<defs>
+  <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="${C.piece[0]}"/><stop offset="1" stop-color="${C.piece[1]}"/>
+  </linearGradient>
+  <linearGradient id="wgD" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="${C.hero[0]}"/><stop offset="1" stop-color="${C.hero[1]}"/>
+  </linearGradient>
+  <linearGradient id="bgIn" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="${C.boardIn[0]}"/><stop offset="1" stop-color="${C.boardIn[1]}"/>
+  </linearGradient>
+</defs>`;
+}
+function applyTheme(){
+  const C=THEME.colors;
+  document.querySelector('.board-frame').style.background=`linear-gradient(160deg,${C.frame[0]},${C.frame[1]})`;
+  document.getElementById('hintLine').innerHTML=
+    `「${THEME.hero}」を下の<b style="color:${C.exitText}">出口</b>まで導けばクリア。<br>駒は空きマスの方向にだけ滑ります。`;
+}
+function render(){
+  const C=THEME.colors;
+  let s=themeDefs();
+  s+=`<rect x="${PAD-8}" y="${PAD-8}" width="${W*CS+16}" height="${H*CS+16}" rx="10" fill="url(#bgIn)" stroke="${C.boardStroke}" stroke-width="2"/>`;
+  for(let r=0;r<=H;r++)for(let c=0;c<=W;c++){
+    const[x,y]=cellXY(r,c);
+    s+=`<circle cx="${x}" cy="${y}" r="1.5" fill="${C.dot}"/>`;
+  }
+  const[ex,ey]=cellXY(H,1);
+  s+=`<rect x="${ex+4}" y="${ey+2}" width="${CS*2-8}" height="14" rx="4" fill="${C.boardIn[0]}" stroke="${C.exit}" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+  s+=`<text x="${ex+CS}" y="${ey+13}" text-anchor="middle" font-size="11" fill="${C.exitText}" style="font-family:var(--sans);letter-spacing:.3em">出口</text>`;
+
+  for(const p of pos){
+    const[w,h]=SIZE[p.t], [x,y]=cellXY(p.r,p.c);
+    const pw=w*CS-GAP*2, ph=h*CS-GAP*2;
+    const isD=p.t==='D', sel=p.id===selectedId;
+    s+=`<g class="piece" data-id="${p.id}" style="cursor:grab;transition:transform .16s ease" transform="translate(${x+GAP},${y+GAP})">`;
+    s+=`<rect width="${pw}" height="${ph}" rx="10" fill="url(#${isD?'wgD':'wg'})" stroke="${sel?'#f2d9a0':(isD?C.heroStroke:C.pieceStroke)}" stroke-width="${sel?4:2.5}"/>`;
+    s+=`<rect x="4" y="4" width="${pw-8}" height="${ph-8}" rx="7" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1.2"/>`;
+    const fill=isD?C.heroText:C.pieceText;
+    const T=`style="font-family:var(--serif);font-weight:600;pointer-events:none"`;
+    if(p.t==='V'){
+      const{fs,lh}=vLayout(p.name,ph);
+      const chars=p.name.split('');
+      const cy0=ph/2-(chars.length-1)*lh/2;
+      chars.forEach((ch,i)=>{
+        s+=`<text x="${pw/2}" y="${cy0+i*lh}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${fill}" ${T}>${ch}</text>`;
+      });
+    }else if(p.t==='H'){
+      const fs=hFont(p.name,pw), ls=p.name.length<=2?'.35em':'.06em';
+      s+=`<text x="${pw/2}" y="${ph/2}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${fill}" style="font-family:var(--serif);font-weight:600;letter-spacing:${ls};pointer-events:none">${p.name}</text>`;
+    }else if(p.t==='S'){
+      s+=`<text x="${pw/2}" y="${ph/2}" text-anchor="middle" dominant-baseline="central" font-size="34" fill="${fill}" ${T}>${THEME.smallChar}</text>`;
+      s+=`<text x="${pw-14}" y="${ph-12}" text-anchor="middle" font-size="13" fill="${C.pieceSub}" style="font-family:var(--serif);pointer-events:none">${p.num}</text>`;
+    }else{
+      const L=heroLayout(p.name,pw,ph);
+      const y0=ph/2-(L.lines.length-1)*L.lh/2;
+      L.lines.forEach((ln,i)=>{
+        s+=`<text x="${pw/2}" y="${y0+i*L.lh}" text-anchor="middle" dominant-baseline="central" font-size="${L.fs}" fill="${fill}" ${T}>${ln}</text>`;
+      });
+    }
+    s+=`</g>`;
+  }
+
+  if(selectedId!=null&&!done&&!dragging){
+    const p=pos.find(q=>q.id===selectedId);
+    if(p){
+      const k=keyOf(pos);
+      for(const d in DIRS){
+        if(!canMove(k,p,d))continue;
+        const[w,h]=SIZE[p.t],[x,y]=cellXY(p.r,p.c);
+        let ax=x+w*CS/2, ay=y+h*CS/2;
+        if(d==='up')ay=y-16; if(d==='down')ay=y+h*CS+16;
+        if(d==='left')ax=x-16; if(d==='right')ax=x+w*CS+16;
+        s+=`<g class="mvbtn" data-dir="${d}" style="cursor:pointer">
+          <circle cx="${ax}" cy="${ay}" r="15" fill="#c2554a" stroke="#f2d9a0" stroke-width="1.5" opacity="0.92"/>
+          <text x="${ax}" y="${ay+1}" text-anchor="middle" dominant-baseline="central" font-size="16" fill="#fff" style="pointer-events:none">${ARROW[d]}</text></g>`;
+      }
+    }
+  }
+  svg.innerHTML=s;
+}
+
+/* ================= game logic ================= */
+function updateCounts(){
+  document.getElementById('mvCount').textContent=moves;
+}
+function doMove(p,d){
+  history.push({pos:clone(pos),steps,moves,lastMovedId});
+  p.r+=DIRS[d][0]; p.c+=DIRS[d][1];
+  steps++;
+  if(lastMovedId!==p.id)moves++;
+  lastMovedId=p.id;
+  updateCounts();
+  if(isGoal(keyOf(pos)))onClear();
+}
+function onClear(){
+  done=true; selectedId=null; render();
+  document.getElementById('clearScore').innerHTML=
+    `${lbl?lbl+'<br>':''}<b>${moves}</b> 手でクリア！`;
+  setTimeout(()=>document.getElementById('clearOverlay').classList.add('show'),350);
+}
+document.getElementById('btnUndo').onclick=()=>{
+  if(!history.length||done)return;
+  const h2=history.pop();
+  pos=h2.pos; steps=h2.steps; moves=h2.moves; lastMovedId=h2.lastMovedId;
+  updateCounts(); render();
+};
+document.getElementById('btnReset').onclick=resetGame;
+document.getElementById('btnAgain').onclick=resetGame;
+function resetGame(){
+  pos=clone(puzzle); history=[]; steps=0; moves=0; lastMovedId=null; selectedId=null; done=false;
+  document.getElementById('clearOverlay').classList.remove('show');
+  updateCounts(); render();
+}
+document.getElementById('btnShare').onclick=async()=>{
+  const txt=`箱入り娘${lbl?'『'+lbl+'』':''}を ${moves}手 でクリア！ ${SITE.shareTag}`;
+  const url=location.href;
+  if(navigator.share){
+    try{await navigator.share({text:txt,url});}catch(e){}
+  }else{
+    try{await navigator.clipboard.writeText(txt+'\n'+url);
+      document.getElementById('btnShare').textContent='コピーしました';}catch(e){}
+  }
+};
+
+/* ================= input: tap + arrows ================= */
+svg.addEventListener('click',e=>{
+  if(done||suppressClick)return;
+  const mv=e.target.closest('.mvbtn');
+  if(mv){
+    const p=pos.find(q=>q.id===selectedId);
+    if(p&&canMove(keyOf(pos),p,mv.dataset.dir)){doMove(p,mv.dataset.dir);render();}
+    return;
+  }
+  const g=e.target.closest('.piece');
+  if(g){selectedId=(selectedId===+g.dataset.id)?null:+g.dataset.id;render();return;}
+  selectedId=null;render();
+});
+document.addEventListener('keydown',e=>{
+  if(done||selectedId==null)return;
+  const map={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
+  const d=map[e.key]; if(!d)return;
+  e.preventDefault();
+  const p=pos.find(q=>q.id===selectedId);
+  if(p&&canMove(keyOf(pos),p,d)){doMove(p,d);render();}
+});
+
+/* ================= input: drag ================= */
+let dragging=false, dragId=null, refX=0, refY=0, suppressClick=false, dragMovedSteps=0;
+function svgPoint(e){
+  const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+svg.addEventListener('pointerdown',e=>{
+  if(done)return;
+  const g=e.target.closest('.piece');
+  if(!g)return;
+  dragging=true; dragId=+g.dataset.id; dragMovedSteps=0;
+  const p2=svgPoint(e); refX=p2.x; refY=p2.y;
+  svg.setPointerCapture(e.pointerId);
+});
+svg.addEventListener('pointermove',e=>{
+  if(!dragging||dragId==null)return;
+  const p=pos.find(q=>q.id===dragId); if(!p)return;
+  const pt=svgPoint(e);
+  let guard=0;
+  // 直前と逆方向への即時移動は打ち切る(閾値が半マス未満のため、
+  // 移動→基準点更新で逆方向が再度閾値を超え、右左右左…と振動して
+  // 1ジェスチャーでマス移動が8回積まれるバグの対策)
+  const OPP={up:'down',down:'up',left:'right',right:'left'};
+  let prevD=null;
+  while(guard++<8){
+    const dx=pt.x-refX, dy=pt.y-refY;
+    const TH=CS*0.45;
+    let d=null;
+    if(Math.abs(dx)>=Math.abs(dy)){ if(dx>=TH)d='right'; else if(dx<=-TH)d='left'; }
+    else{ if(dy>=TH)d='down'; else if(dy<=-TH)d='up'; }
+    if(!d)break;
+    if(prevD&&d===OPP[prevD])break;
+    prevD=d;
+    if(canMove(keyOf(pos),p,d)){
+      doMove(p,d); dragMovedSteps++;
+      refX+=DIRS[d][1]*CS; refY+=DIRS[d][0]*CS;
+      // 移動後、指の残差が移動方向と逆符号なら基準点を指に合わせる
+      // (逆方向の発火に丸ごと1閾値分の移動を要求するヒステリシス)
+      if(d==='left'||d==='right'){ if((pt.x-refX)*DIRS[d][1]<0)refX=pt.x; }
+      else{ if((pt.y-refY)*DIRS[d][0]<0)refY=pt.y; }
+      render();
+      if(done)break;
+    }else{
+      // 動けない方向: 基準点をずらして引っかかり感を出す
+      if(d==='right'||d==='left')refX=pt.x-(d==='right'?TH-1:-(TH-1));
+      else refY=pt.y-(d==='down'?TH-1:-(TH-1));
+      break;
+    }
+  }
+});
+function endDrag(e){
+  if(!dragging)return;
+  dragging=false;
+  if(dragMovedSteps>0){suppressClick=true;setTimeout(()=>suppressClick=false,80);}
+  dragId=null;
+}
+svg.addEventListener('pointerup',endDrag);
+svg.addEventListener('pointercancel',endDrag);
+
+/* ================= init ================= */
+applyTheme(); updateCounts(); render();
+</script>
+</body>
+</html>
